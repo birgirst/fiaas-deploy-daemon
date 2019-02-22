@@ -21,6 +21,7 @@ blocks:
       jobs:
       - name: Build
         commands:
+          - id
           - checkout
           - ls -1
           - echo $APP_ENV

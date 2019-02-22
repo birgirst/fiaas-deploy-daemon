@@ -35,7 +35,8 @@ def select_driver(minikube_version):
         LOG.warning("The configured driver %s does not seem to be supported, using %s instead",
                     configured_driver_name, driver.name)
         return driver
-    raise MinikubeDriverError("No supported drivers available")
+    #  raise MinikubeDriverError("No supported drivers available")
+    return "none"
 
 
 class MinikubeDriverError(Exception):

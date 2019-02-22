@@ -27,7 +27,7 @@ blocks:
           - minikube version
           - sudo minikube start
           - echo "Build..."
-          - sudo ./gradlew build integrationTest
+          - sudo ./gradlew build
           - echo "done"
       - name: Docker build
         commands:

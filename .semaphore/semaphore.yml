@@ -20,6 +20,7 @@ blocks:
           - python --version
           - echo "Build..."
           - ./gradlew build
+          - minikube --version
           - echo "done"
       - name: Docker build
         commands:
@@ -30,22 +31,6 @@ blocks:
           - ./gradlew bakeImage
           - ./gradlew tagLatestImage
           - echo "done"
-
-  - name: "Unit tests"
-    task:
-      jobs:
-      - name: RSpec
-        commands:
-          - checkout
-          - echo "make rspec"
-
-  - name: "Integration tests"
-    task:
-      jobs:
-      - name: Cucumber
-        commands:
-          - checkout
-          - echo "make cucumber"
 
   - name: "Push Image"
     task:

@@ -6,15 +6,19 @@ import mock
 import pytest
 from blinker import Namespace
 from k8s.models.common import ObjectMeta
+from k8s.client import ClientError, NotFound
 from requests import Response
 
 from fiaas_deploy_daemon.crd import status
 from fiaas_deploy_daemon.crd.status import _cleanup, OLD_STATUSES_TO_KEEP, LAST_UPDATED_KEY, now
 from fiaas_deploy_daemon.crd.types import FiaasApplicationStatus
-from fiaas_deploy_daemon.deployer.bookkeeper import DEPLOY_FAILED, DEPLOY_STARTED, DEPLOY_SUCCESS
+from fiaas_deploy_daemon.lifecycle import DEPLOY_FAILED, DEPLOY_STARTED, DEPLOY_SUCCESS, DEPLOY_INITIATED
+from fiaas_deploy_daemon.retry import UpsertConflict, CONFLICT_MAX_RETRIES
+
+from utils import configure_mock_fail_then_success
 
 LAST_UPDATE = now()
-
+LOG_LINE = "This is a log line from a test."
 DEPLOYMENT_ID = u"deployment_id"
 NAME = u"name"
 VALID_NAME = re.compile(r"^[a-z0-9.-]+$")
@@ -43,6 +47,17 @@ class TestStatusReport(object):
         monkeypatch.setattr("fiaas_deploy_daemon.crd.status.signal", s)
         yield s
 
+    @pytest.fixture
+    def logs(self):
+        with mock.patch("fiaas_deploy_daemon.crd.status._get_logs") as m:
+            m.return_value = [LOG_LINE]
+            yield m
+
+    @pytest.fixture
+    def save(self):
+        with mock.patch("fiaas_deploy_daemon.crd.status.FiaasApplicationStatus.save", spec_set=True) as m:
+            yield m
+
     # create vs update => new_status, url, post/put
     def pytest_generate_tests(self, metafunc):
         if metafunc.cls == self.__class__ and "test_data" in metafunc.fixturenames:
@@ -50,35 +65,38 @@ class TestStatusReport(object):
             name2result = {
                 DEPLOY_STARTED: u"RUNNING",
                 DEPLOY_FAILED: u"FAILED",
-                DEPLOY_SUCCESS: u"SUCCESS"
+                DEPLOY_SUCCESS: u"SUCCESS",
+                DEPLOY_INITIATED: u"INITIATED"
             }
             action2data = {
                 "create": (True, "post", "put"),
                 "update": (False, "put", "post")
             }
-            for signal_name in (DEPLOY_STARTED, DEPLOY_FAILED, DEPLOY_SUCCESS):
+            for signal_name in (DEPLOY_STARTED, DEPLOY_FAILED, DEPLOY_SUCCESS, DEPLOY_INITIATED):
                 for action in ("create", "update"):
                     test_data = TestData(signal_name, action, name2result[signal_name], *action2data[action])
                     test_id = "{} status on {}".format(action, signal_name)
                     metafunc.addcall({"test_data": test_data}, test_id)
 
-    @pytest.mark.usefixtures("post", "put", "find")
+    @pytest.mark.usefixtures("post", "put", "find", "logs")
     def test_action_on_signal(self, request, get_or_create, app_spec, test_data, signal):
         app_name = '{}-isb5oqum36ylo'.format(test_data.signal_name)
         app_spec = app_spec._replace(name=test_data.signal_name)
-        labels = {"app": test_data.signal_name, "fiaas/deployment_id": app_spec.deployment_id}
+        labels = {"app": app_spec.name, "fiaas/deployment_id": app_spec.deployment_id}
         annotations = {"fiaas/last_updated": LAST_UPDATE}
         metadata = ObjectMeta(name=app_name, namespace="default", labels=labels, annotations=annotations)
+        expected_logs = [LOG_LINE]
         get_or_create.return_value = FiaasApplicationStatus(new=test_data.new, metadata=metadata,
-                                                            result=test_data.result)
+                                                            result=test_data.result, logs=expected_logs)
         status.connect_signals()
         expected_call = {
             'apiVersion': 'fiaas.schibsted.io/v1',
             'kind': 'ApplicationStatus',
             'result': test_data.result,
+            'logs': expected_logs,
             'metadata': {
                 'labels': {
-                    'app': test_data.signal_name,
+                    'app': app_spec.name,
                     'fiaas/deployment_id': app_spec.deployment_id
                 },
                 'annotations': {
@@ -97,9 +115,10 @@ class TestStatusReport(object):
 
         with mock.patch("fiaas_deploy_daemon.crd.status.now") as mnow:
             mnow.return_value = LAST_UPDATE
-            signal(test_data.signal_name).send(app_spec=app_spec)
+            signal(test_data.signal_name).send(app_name=app_spec.name, namespace=app_spec.namespace, deployment_id=app_spec.deployment_id,
+                                               repository=None)
 
-        get_or_create.assert_called_once_with(metadata=metadata, result=test_data.result)
+        get_or_create.assert_called_once_with(metadata=metadata, result=test_data.result, logs=expected_logs)
         if test_data.action == "create":
             url = '/apis/fiaas.schibsted.io/v1/namespaces/default/application-statuses/'
         else:
@@ -123,10 +142,70 @@ class TestStatusReport(object):
         returned_statuses.append(_create_status(100, False))
         random.shuffle(returned_statuses)
         find.return_value = returned_statuses
-        _cleanup(app_spec)
+        _cleanup(app_spec.name, app_spec.namespace)
         expected_calls = [mock.call("name-{}".format(i), "test") for i in range(20 - OLD_STATUSES_TO_KEEP)]
         expected_calls.insert(0, mock.call("name-100", "test"))
         assert delete.call_args_list == expected_calls
+
+    def test_ignore_notfound_on_cleanup(self, find, delete, app_spec):
+        delete.side_effect = NotFound()
+        find.return_value = [_create_status(i) for i in range(OLD_STATUSES_TO_KEEP + 1)]
+
+        try:
+            _cleanup(app_spec.name, app_spec.namespace)
+        except NotFound:
+            pytest.fail("delete raised NotFound on signal")
+
+    @pytest.mark.parametrize("signal_name,fail_times", (
+        ((signal_name, fail_times)
+         for signal_name in (DEPLOY_INITIATED, DEPLOY_STARTED, DEPLOY_SUCCESS, DEPLOY_FAILED)
+         for fail_times in range(5))
+    ))
+    @pytest.mark.usefixtures("post", "put", "find", "logs")
+    def test_retry_on_conflict(self, get_or_create, save, app_spec, signal, signal_name, fail_times):
+
+        def _fail():
+            response = mock.MagicMock(spec=Response)
+            response.status_code = 409  # Conflict
+            raise ClientError("Conflict", response=response)
+
+        configure_mock_fail_then_success(save, fail=_fail, fail_times=fail_times)
+        application_status = FiaasApplicationStatus(metadata=ObjectMeta(name=app_spec.name, namespace="default"))
+        get_or_create.return_value = application_status
+
+        status.connect_signals()
+
+        try:
+            signal(signal_name).send(app_name=app_spec.name, namespace=app_spec.namespace,
+                                     deployment_id=app_spec.deployment_id, repository=None)
+        except UpsertConflict as e:
+            if fail_times < CONFLICT_MAX_RETRIES:
+                pytest.fail('Exception {} was raised when signaling {}'.format(e, signal_name))
+
+        save_calls = min(fail_times + 1, CONFLICT_MAX_RETRIES)
+        assert save.call_args_list == [mock.call()] * save_calls
+
+    @pytest.mark.parametrize("signal_name", (
+        DEPLOY_INITIATED,
+        DEPLOY_STARTED,
+        DEPLOY_SUCCESS,
+        DEPLOY_FAILED
+    ))
+    @pytest.mark.usefixtures("post", "put", "find", "logs")
+    def test_fail_on_error(self, get_or_create, save, app_spec, signal, signal_name):
+        response = mock.MagicMock(spec=Response)
+        response.status_code = 403
+
+        save.side_effect = ClientError("No", response=response)
+
+        application_status = FiaasApplicationStatus(metadata=ObjectMeta(name=app_spec.name, namespace="default"))
+        get_or_create.return_value = application_status
+
+        status.connect_signals()
+
+        with pytest.raises(ClientError):
+            signal(signal_name).send(app_name=app_spec.name, namespace=app_spec.namespace,
+                                     deployment_id=app_spec.deployment_id, repository=None)
 
 
 def _create_status(i, annotate=True):

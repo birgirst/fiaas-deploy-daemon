@@ -13,6 +13,7 @@ from k8s.models.pod import ContainerPort, EnvVar, HTTPGetAction, TCPSocketAction
     ResourceFieldSelector, ObjectFieldSelector
 
 from fiaas_deploy_daemon.deployer.kubernetes.autoscaler import should_have_autoscaler
+from fiaas_deploy_daemon.retry import retry_on_upsert_conflict
 from fiaas_deploy_daemon.tools import merge_dicts
 
 LOG = logging.getLogger(__name__)
@@ -29,11 +30,15 @@ class DeploymentDeployer(object):
         self._global_env = config.global_env
         self._lifecycle = None
         self._grace_period = self.MINIMUM_GRACE_PERIOD
+        self._use_in_memory_emptydirs = config.use_in_memory_emptydirs
         if config.pre_stop_delay > 0:
             self._lifecycle = Lifecycle(preStop=Handler(
                 _exec=ExecAction(command=["sleep", str(config.pre_stop_delay)])))
             self._grace_period += config.pre_stop_delay
+        self._max_surge = config.deployment_max_surge
+        self._max_unavailable = config.deployment_max_unavailable
 
+    @retry_on_upsert_conflict(max_value_seconds=5, max_tries=5)
     def deploy(self, app_spec, selector, labels, besteffort_qos_is_required):
         LOG.info("Creating new deployment for %s", app_spec.name)
         deployment_labels = merge_dicts(app_spec.labels.deployment, labels)
@@ -83,9 +88,9 @@ class DeploymentDeployer(object):
             except NotFound:
                 pass
 
-        # XXX: maxSurge should really be 25%, but can't yet, due to a bug in the k8s library,
-        # see https://github.com/fiaas/k8s/issues/47
-        deployment_strategy = DeploymentStrategy(rollingUpdate=RollingUpdateDeployment(maxUnavailable=0, maxSurge=1))
+        deployment_strategy = DeploymentStrategy(
+            rollingUpdate=RollingUpdateDeployment(maxUnavailable=self._max_unavailable,
+                                                  maxSurge=self._max_surge))
         if app_spec.replicas == 1 and app_spec.singleton:
             deployment_strategy = DeploymentStrategy(
                 rollingUpdate=RollingUpdateDeployment(maxUnavailable=1, maxSurge=0))
@@ -112,7 +117,11 @@ class DeploymentDeployer(object):
         volumes = []
         volumes.append(Volume(name="{}-config".format(app_spec.name),
                               configMap=ConfigMapVolumeSource(name=app_spec.name, optional=True)))
-        volumes.append(Volume(name="tmp", emptyDir=EmptyDirVolumeSource()))
+        if self._use_in_memory_emptydirs:
+            empty_dir_volume_source = EmptyDirVolumeSource(medium="Memory")
+        else:
+            empty_dir_volume_source = EmptyDirVolumeSource()
+        volumes.append(Volume(name="tmp", emptyDir=empty_dir_volume_source))
         return volumes
 
     def _make_volume_mounts(self, app_spec):

@@ -156,13 +156,25 @@ class Configuration(Namespace):
         parser.add_argument("--use-ingress-tls", help=TLS_HELP,
                             choices=("disabled", "default_off", "default_on"),
                             default="disabled")
+        parser.add_argument("--tls-certificate-issuer", help="Certificate issuer to use with cert-manager to provision certificates",
+                            default=None)
+        parser.add_argument("--use-in-memory-emptydirs", help="Use memory for emptydirs mounted in the deployed application",
+                            action="store_true")
+        parser.add_argument("--deployment-max-surge", help="maximum number of extra pods that can be scheduled above the desired "
+                            "number of pods during an update",
+                            default=u"25%", type=_int_or_unicode)
+        parser.add_argument("--deployment-max-unavailable", help="The maximum number of pods that can be unavailable during an update",
+                            default="0", type=_int_or_unicode)
         usage_reporting_parser = parser.add_argument_group("Usage Reporting", USAGE_REPORTING_LONG_HELP)
         usage_reporting_parser.add_argument("--usage-reporting-cluster-name",
                                             help="Name of the cluster where the fiaas-deploy-daemon instance resides")
-        usage_reporting_parser.add_argument("--usage-reporting-provider-identifier",
+        usage_reporting_parser.add_argument("--usage-reporting-operator",
                                             help="Identifier for the operator of the fiaas-deploy-daemon instance")
         usage_reporting_parser.add_argument("--usage-reporting-endpoint", help="Endpoint to POST usage data to")
         usage_reporting_parser.add_argument("--usage-reporting-tenant", help="Name of publisher of events")
+        usage_reporting_parser.add_argument("--usage-reporting-team",
+                                            help="""Name of team that is responsible for components deployed \
+                                                 "by the fiaas-deploy-daemon instance""")
         api_parser = parser.add_argument_group("API server")
         api_parser.add_argument("--api-server", help="Address of the api-server to use (IP or name)",
                                 default="https://kubernetes.default.svc.cluster.local")
@@ -302,3 +314,11 @@ class HostRewriteRule(object):
 
 class InvalidConfigurationException(Exception):
     pass
+
+
+def _int_or_unicode(arg):
+    """Accept a number or a (unicode) string, but not a number as a string"""
+    try:
+        return int(arg)
+    except ValueError:
+        return unicode(arg)

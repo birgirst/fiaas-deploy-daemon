@@ -50,7 +50,7 @@ def app_spec():
         ingresses=[IngressItemSpec(host=None, pathmappings=[IngressPathMappingSpec(path="/", port=80)])],
         strongbox=StrongboxSpec(enabled=False, iam_role=None, aws_region="eu-west-1", groups=None),
         singleton=False,
-        ingress_tls=IngressTlsSpec(enabled=False)
+        ingress_tls=IngressTlsSpec(enabled=False, certificate_issuer=None)
     )
 
 
@@ -152,7 +152,7 @@ def delete():
         yield mockk
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def _open():
     """
     mock open() to return predefined namespace if the file we're trying to read is

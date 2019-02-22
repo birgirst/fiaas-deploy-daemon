@@ -18,36 +18,50 @@ def namedtuple_with_defaults(typename, field_names, default_values=()):
 
 DevhoseDeploymentEvent = namedtuple_with_defaults('DevhoseDeploymentEvent',
                                                   'id application environment repository started_at timestamp target \
-                                                   status source_type facility details',
+                                                   status source_type facility details trigger team',
                                                   {'source_type': 'fiaas', 'facility': 'sdrn:schibsted:service:fiaas'})
 
 status_map = {'STARTED': 'in_progress', 'SUCCESS': 'succeeded', 'FAILED': 'failed'}
 
 
 class DevhoseDeploymentEventTransformer(object):
+    FIAAS_TRIGGER = {'type': 'fiaas'}
+
     def __init__(self, config):
         self._environment = config.environment
         self._target_infrastructure = config.usage_reporting_cluster_name
-        self._target_provider = config.usage_reporting_provider_identifier
+        self._target_provider = config.usage_reporting_cluster_name  # Use same value as infrastructure for devhose
+        self._operator = config.usage_reporting_operator
+        self._team = config.usage_reporting_team
         self._deployments_started = {}
 
-    def __call__(self, status, app_spec):
+    def __call__(self, status, app_name, namespace, deployment_id, repository=None):
+        timestamp = _timestamp()
+        started_timestamp = None
         if status == 'STARTED':
-            started_timestamp = _timestamp()
-            self._deployments_started[(app_spec.name, app_spec.deployment_id)] = started_timestamp
+            self._deployments_started[(app_name, deployment_id)] = timestamp
+            started_timestamp = timestamp
         else:
-            started_timestamp = self._deployments_started.pop((app_spec.name, app_spec.deployment_id))
-        event = DevhoseDeploymentEvent(id=app_spec.deployment_id,
-                                       application=app_spec.name,
+            try:
+                started_timestamp = self._deployments_started.pop((app_name, deployment_id))
+            except KeyError:
+                # This can happen if deployment fails immediately such as in case of config parse errors
+                pass
+
+        event = DevhoseDeploymentEvent(id=deployment_id,
+                                       application=app_name,
                                        environment=_environment(self._environment[:3]),
-                                       repository=_repository(app_spec),
-                                       started_at=started_timestamp,
-                                       timestamp=started_timestamp if status == 'STARTED' else _timestamp(),
+                                       repository=repository,
+                                       started_at=started_timestamp if started_timestamp else timestamp,
+                                       timestamp=timestamp,
                                        target={'infrastructure': self._target_infrastructure,
                                                'provider': self._target_provider,
-                                               'instance': app_spec.namespace},
+                                               'team': self._operator,
+                                               'instance': namespace},
                                        status=status_map[status],
-                                       details={'environment': self._environment})
+                                       details={'environment': self._environment},
+                                       trigger=DevhoseDeploymentEventTransformer.FIAAS_TRIGGER,
+                                       team=self._team)
         return event.__dict__
 
 
@@ -56,8 +70,4 @@ def _environment(env):
 
 
 def _timestamp():
-    return datetime.utcnow().replace(microsecond=0).isoformat()
-
-
-def _repository(app_spec):
-    return app_spec.annotations.deployment.get("fiaas/source-repository")
+    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"

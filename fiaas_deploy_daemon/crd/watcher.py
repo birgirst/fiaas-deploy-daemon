@@ -13,16 +13,21 @@ from k8s.watcher import Watcher
 from .types import FiaasApplication
 from ..base_thread import DaemonThread
 from ..deployer import DeployerEvent
+from ..log_extras import set_extras
+
+from ..specs.factory import InvalidConfiguration
+from yaml import YAMLError
 
 LOG = logging.getLogger(__name__)
 
 
 class CrdWatcher(DaemonThread):
-    def __init__(self, spec_factory, deploy_queue, config):
+    def __init__(self, spec_factory, deploy_queue, config, lifecycle):
         super(CrdWatcher, self).__init__()
         self._spec_factory = spec_factory
         self._deploy_queue = deploy_queue
         self._watcher = Watcher(FiaasApplication)
+        self._lifecycle = lifecycle
         self.namespace = config.namespace
         self.enable_deprecated_multi_namespace_support = config.enable_deprecated_multi_namespace_support
 
@@ -69,20 +74,32 @@ class CrdWatcher(DaemonThread):
         LOG.debug("Deploying %s", application.spec.application)
         try:
             deployment_id = application.metadata.labels["fiaas/deployment_id"]
+            set_extras(app_name=application.spec.application,
+                       namespace=application.metadata.namespace,
+                       deployment_id=deployment_id)
         except (AttributeError, KeyError, TypeError):
             raise ValueError("The Application {} is missing the 'fiaas/deployment_id' label".format(
                 application.spec.application))
-        app_spec = self._spec_factory(
-            name=application.spec.application,
-            image=application.spec.image,
-            app_config=application.spec.config,
-            teams=[],
-            tags=[],
-            deployment_id=deployment_id,
-            namespace=application.metadata.namespace
-        )
-        self._deploy_queue.put(DeployerEvent("UPDATE", app_spec))
-        LOG.debug("Queued deployment for %s", application.spec.application)
+        try:
+            repository = _repository(application)
+            self._lifecycle.initiate(app_name=application.spec.application, namespace=application.metadata.namespace,
+                                     deployment_id=deployment_id, repository=repository)
+            app_spec = self._spec_factory(
+                name=application.spec.application,
+                image=application.spec.image,
+                app_config=application.spec.config,
+                teams=[],
+                tags=[],
+                deployment_id=deployment_id,
+                namespace=application.metadata.namespace
+            )
+            set_extras(app_spec)
+            self._deploy_queue.put(DeployerEvent("UPDATE", app_spec))
+            LOG.debug("Queued deployment for %s", application.spec.application)
+        except (InvalidConfiguration, YAMLError):
+            LOG.exception("Failed to create app spec from fiaas config file")
+            self._lifecycle.failed(app_name=application.spec.application, namespace=application.metadata.namespace,
+                                   deployment_id=deployment_id, repository=repository)
 
     def _delete(self, application):
         app_spec = self._spec_factory(
@@ -91,8 +108,16 @@ class CrdWatcher(DaemonThread):
             app_config=application.spec.config,
             teams=[],
             tags=[],
-            deployment_id=None,
+            deployment_id="deletion",
             namespace=application.metadata.namespace
         )
+        set_extras(app_spec)
         self._deploy_queue.put(DeployerEvent("DELETE", app_spec))
         LOG.debug("Queued delete for %s", application.spec.application)
+
+
+def _repository(application):
+    try:
+        return application.metadata.annotations["deployment"]["fiaas/source-repository"]
+    except (TypeError, KeyError, AttributeError):
+        pass

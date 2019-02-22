@@ -2,14 +2,17 @@
 # -*- coding: utf-8
 from __future__ import absolute_import
 
-from itertools import chain
+import base64
+import hashlib
 import logging
+from itertools import chain
 
 from k8s.client import NotFound
 from k8s.models.common import ObjectMeta
 from k8s.models.ingress import Ingress, IngressSpec, IngressRule, HTTPIngressRuleValue, HTTPIngressPath, IngressBackend, \
     IngressTLS
 
+from fiaas_deploy_daemon.retry import retry_on_upsert_conflict
 from fiaas_deploy_daemon.tools import merge_dicts
 
 LOG = logging.getLogger(__name__)
@@ -34,6 +37,7 @@ class IngressDeployer(object):
         except NotFound:
             pass
 
+    @retry_on_upsert_conflict
     def _create(self, app_spec, labels):
         LOG.info("Creating/updating ingress for %s", app_spec.name)
         annotations = {
@@ -45,10 +49,12 @@ class IngressDeployer(object):
         metadata = ObjectMeta(name=app_spec.name, namespace=app_spec.namespace, labels=custom_labels,
                               annotations=custom_annotations)
 
-        per_host_ingress_rules = [IngressRule(host=self._apply_host_rewrite_rules(ingress_item.host),
-                                              http=self._make_http_ingress_rule_value(app_spec, ingress_item.pathmappings))
-                                  for ingress_item in app_spec.ingresses
-                                  if ingress_item.host is not None]
+        per_host_ingress_rules = [
+            IngressRule(host=self._apply_host_rewrite_rules(ingress_item.host),
+                        http=self._make_http_ingress_rule_value(app_spec, ingress_item.pathmappings))
+            for ingress_item in app_spec.ingresses
+            if ingress_item.host is not None
+        ]
         default_host_ingress_rules = self._create_default_host_ingress_rules(app_spec)
 
         ingress_spec = IngressSpec(rules=per_host_ingress_rules + default_host_ingress_rules)
@@ -116,18 +122,48 @@ def _deduplicate_in_order(iterator):
 class IngressTls(object):
     def __init__(self, config):
         self._use_ingress_tls = config.use_ingress_tls
+        self._cert_issuer = config.tls_certificate_issuer
+        self._shortest_suffix = sorted(config.ingress_suffixes, key=len)[0] if config.ingress_suffixes else None
 
     def apply(self, ingress, app_spec, hosts):
         if self._should_have_ingress_tls(app_spec):
-            tls_annotations = {u"kubernetes.io/tls-acme": u"true"}
+            tls_annotations = {}
+            if self._cert_issuer or app_spec.ingress_tls.certificate_issuer:
+                issuer = app_spec.ingress_tls.certificate_issuer if app_spec.ingress_tls.certificate_issuer else self._cert_issuer
+                tls_annotations[u"certmanager.k8s.io/cluster-issuer"] = issuer
+            else:
+                tls_annotations[u"kubernetes.io/tls-acme"] = u"true"
             ingress.metadata.annotations = merge_dicts(
                 ingress.metadata.annotations if ingress.metadata.annotations else {},
                 tls_annotations
             )
-            ingress.spec.tls = [IngressTLS(hosts=[host], secretName=host) for host in hosts]
+            # TODO: DOCD-1846 - Once new certificates has been provisioned, remove the single host entries
+            ingress.spec.tls = [IngressTLS(hosts=[host], secretName=host) for host in hosts if len(host) < 64]
+            collapsed = self._collapse_hosts(app_spec, hosts)
+            ingress.spec.tls.append(IngressTLS(hosts=collapsed, secretName="{}-ingress-tls".format(app_spec.name)))
+
+    def _collapse_hosts(self, app_spec, hosts):
+        """The first hostname in the list will be used as Common Name in the certificate"""
+        if self._shortest_suffix:
+            try:
+                return [self._generate_short_host(app_spec)] + hosts
+            except ValueError:
+                LOG.error("Failed to generate a short name to use as Common Name")
+        return hosts
 
     def _should_have_ingress_tls(self, app_spec):
         if self._use_ingress_tls == 'disabled' or app_spec.ingress_tls.enabled is False:
             return False
         else:
             return self._use_ingress_tls == 'default_on' or app_spec.ingress_tls.enabled is True
+
+    def _generate_short_host(self, app_spec):
+        h = hashlib.sha1()
+        h.update(app_spec.name)
+        h.update(app_spec.namespace)
+        prefix = base64.b32encode(h.digest()).strip("=").lower()
+        short_prefix = prefix[:62 - len(self._shortest_suffix)]
+        short_name = "{}.{}".format(short_prefix, self._shortest_suffix)
+        if len(short_name) > 63 or short_name[0] == ".":
+            raise ValueError("Unable to generate a name short enough to be Common Name in certificate")
+        return short_name

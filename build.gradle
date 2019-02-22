@@ -68,6 +68,7 @@ task tagLatestImage(type: DockerTagImage) {
     targetImageId { bakeImage.getImageId() }
     tag "latest"
 }
+integrationTest.dependsOn tagLatestImage
 
 // Ideally we would use DockerPushImage here, but it doesn't support reading the docker config,
 // or even authenticating with a token. So, we have to fall back to executing the docker client.

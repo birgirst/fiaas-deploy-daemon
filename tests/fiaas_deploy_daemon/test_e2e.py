@@ -39,13 +39,11 @@ def _fixture_names(fixture_value):
     return name
 
 
-@pytest.fixture(scope="session", params=("ClusterIP", "NodePort"))
-def service_type(request):
-    return request.param
-
-
 @pytest.mark.integration_test
 class TestE2E(object):
+    @pytest.fixture(scope="module", params=("ClusterIP", "NodePort"))
+    def service_type(self, request):
+        return request.param
 
     @pytest.fixture(scope="module")
     def kubernetes(self, minikube_installer, service_type, k8s_version):
@@ -74,25 +72,28 @@ class TestE2E(object):
         config.cert = (kubernetes["client-cert"], kubernetes["client-key"])
 
     @pytest.fixture(scope="module")
-    def fdd(self, kubernetes, service_type, k8s_version):
+    def fdd(self, kubernetes, service_type, k8s_version, use_docker_for_e2e):
         port = self._get_open_port()
-        args = ["fiaas-deploy-daemon",
-                "--port", str(port),
-                "--api-server", kubernetes["server"],
-                "--api-cert", kubernetes["api-cert"],
-                "--client-cert", kubernetes["client-cert"],
-                "--client-key", kubernetes["client-key"],
-                "--service-type", service_type,
-                "--ingress-suffix", "svc.test.example.com",
-                "--environment", "test",
-                "--datadog-container-image", "DATADOG_IMAGE",
-                "--strongbox-init-container-image", "STRONGBOX_IMAGE",
-                "--use-ingress-tls", "default_off",
-                ]
+        args = [
+            "fiaas-deploy-daemon",
+            "--port", str(port),
+            "--api-server", kubernetes["server"],
+            "--api-cert", kubernetes["api-cert"],
+            "--client-cert", kubernetes["client-cert"],
+            "--client-key", kubernetes["client-key"],
+            "--service-type", service_type,
+            "--ingress-suffix", "svc.test.example.com",
+            "--environment", "test",
+            "--datadog-container-image", "DATADOG_IMAGE",
+            "--strongbox-init-container-image", "STRONGBOX_IMAGE",
+            "--use-ingress-tls", "default_off",
+        ]
         if tpr_supported(k8s_version):
             args.append("--enable-tpr-support")
         if crd_supported(k8s_version):
             args.append("--enable-crd-support")
+        cert_path = os.path.dirname(kubernetes["api-cert"])
+        args = use_docker_for_e2e(cert_path, service_type, k8s_version, port) + args
         fdd = subprocess.Popen(args, stdout=sys.stderr, env=merge_dicts(os.environ, {"NAMESPACE": "default"}))
         time.sleep(1)
         if fdd.poll() is not None:
@@ -171,6 +172,12 @@ class TestE2E(object):
                 Deployment: "e2e_expected/tls-deployment.yml",
                 Ingress: "e2e_expected/tls-ingress.yml",
                 HorizontalPodAutoscaler: "e2e_expected/tls-hpa.yml",
+            }),
+            ("v3/data/examples/tls_enabled_cert_issuer.yml", {
+                Service: "e2e_expected/tls-service-cert-issuer.yml",
+                Deployment: "e2e_expected/tls-deployment-cert-issuer.yml",
+                Ingress: "e2e_expected/tls-ingress-cert-issuer.yml",
+                HorizontalPodAutoscaler: "e2e_expected/tls-hpa-cert-issuer.yml",
             }),
     ))
     def third_party_resource(self, request, k8s_version):
@@ -252,6 +259,12 @@ class TestE2E(object):
                 Ingress: "e2e_expected/tls-ingress.yml",
                 HorizontalPodAutoscaler: "e2e_expected/tls-hpa.yml",
             }),
+            ("v3/data/examples/tls_enabled_cert_issuer.yml", {
+                Service: "e2e_expected/tls-service-cert-issuer.yml",
+                Deployment: "e2e_expected/tls-deployment-cert-issuer.yml",
+                Ingress: "e2e_expected/tls-ingress-cert-issuer.yml",
+                HorizontalPodAutoscaler: "e2e_expected/tls-hpa-cert-issuer.yml",
+            }),
     ))
     def custom_resource_definition(self, request, k8s_version):
         fiaas_path, expected = request.param
@@ -311,6 +324,8 @@ class TestE2E(object):
         def _assert_status():
             status = PaasbetaStatus.get(create_name(name, DEPLOYMENT_ID1))
             assert status.result == u"RUNNING"
+            assert len(status.logs) > 0
+            assert any("Saving result RUNNING for default/{}".format(name) in l for l in status.logs)
 
         wait_until(_assert_status, patience=PATIENCE)
 
@@ -327,7 +342,8 @@ class TestE2E(object):
         paasbetaapplication.save()
 
         # Check success
-        wait_until(_deploy_success(name, kinds, service_type, IMAGE2, expected, DEPLOYMENT_ID2, strongbox_groups), patience=PATIENCE)
+        wait_until(_deploy_success(name, kinds, service_type, IMAGE2, expected, DEPLOYMENT_ID2, strongbox_groups),
+                   patience=PATIENCE)
 
         # Cleanup
         PaasbetaApplication.delete(name)
@@ -356,6 +372,8 @@ class TestE2E(object):
         def _assert_status():
             status = FiaasApplicationStatus.get(create_name(name, DEPLOYMENT_ID1))
             assert status.result == u"RUNNING"
+            assert len(status.logs) > 0
+            assert any("Saving result RUNNING for default/{}".format(name) in l for l in status.logs)
 
         wait_until(_assert_status, patience=PATIENCE)
 
@@ -372,7 +390,8 @@ class TestE2E(object):
         fiaas_application.save()
 
         # Check success
-        wait_until(_deploy_success(name, kinds, service_type, IMAGE2, expected, DEPLOYMENT_ID2, strongbox_groups), patience=PATIENCE)
+        wait_until(_deploy_success(name, kinds, service_type, IMAGE2, expected, DEPLOYMENT_ID2, strongbox_groups),
+                   patience=PATIENCE)
 
         # Cleanup
         FiaasApplication.delete(name)

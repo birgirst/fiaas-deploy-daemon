@@ -139,6 +139,34 @@ ingress:
       port: http
 ```
 
+All applications will get a set of default hosts, if the cluster operator has defined ingress suffixes. 
+If you do not specify a host in your `ingress` configuration, these default hosts will be used.
+For example : 
+1. `your-app.example1.com`
+2. `your-app.example2.com`
+
+When you expose a path on a host you get that one as well. For example : 
+```yaml
+ingress:
+  - host: example.com
+    paths:
+    - path: /my-path
+``` 
+
+If you want to customize paths for default hosts as well, you can do it as :
+```yaml
+ingress:
+  - host: example.com
+    paths:
+    - path: /my-path
+  - paths:
+    - path: /some-other-path
+
+```
+
+This will make `/some-other-path` available on default hosts, but not on the host you provided in ingress. 
+Remember, default hosts will also contain the paths from the ingress.   
+
 ### host
 
 | **Type** | **Required** |
@@ -629,16 +657,26 @@ extensions:
 
 ### tls
 
+#### enabled
+
 | **Type** | **Required** |
 |----------|--------------|
-| boolean  | no           |
+| object   | no           |
 
-If set to true ingress objects will be extended to include annotations necessary for use with
+If enabled, ingress objects will be extended to include annotations necessary for use with
 [cert-manager](https://github.com/jetstack/cert-manager)s [ingress-shim](https://cert-manager.readthedocs.io/en/latest/reference/ingress-shim.html)
 to make use of automatic provisioning and management of TLS certificates.
 
-Default values:
+If certificate_issuer is set, generated ingress objects will be extended to include annotations specifying which certificate issuer to use with
+cert-manager.
+
+Example:
 ```yaml
 extensions:
-  tls: false
+  tls:
+    enabled: true
+    certificate_issuer: letsencrypt
 ```
+
+Note generally fiaas operators will have already configured a default certificate issuer if applicable so the option to specify that explicitly
+is strictly here for allowing for overwriting of the default value and if omitted will use the configured default value.

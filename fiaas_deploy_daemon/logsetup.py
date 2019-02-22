@@ -7,6 +7,9 @@ import json
 import logging
 import sys
 
+from fiaas_deploy_daemon.log_extras import StatusHandler
+from .log_extras import ExtraFilter
+
 
 class FiaasFormatter(logging.Formatter):
     UNWANTED = (
@@ -24,6 +27,7 @@ class FiaasFormatter(logging.Formatter):
         fields["@version"] = 1
         fields["LocationInfo"] = self._build_location(fields)
         fields["message"] = record.getMessage()
+        fields["extras"] = getattr(record, "extras", {})
         if "exc_info" in fields and fields["exc_info"]:
             fields["throwable"] = self.formatException(fields["exc_info"])
         for original, replacement in self.RENAME.iteritems():
@@ -70,15 +74,21 @@ def init_logging(config):
     """
     root = logging.getLogger()
     root.setLevel(logging.INFO)
+    if config.debug:
+        root.setLevel(logging.DEBUG)
+    root.addHandler(_create_default_handler(config))
+    root.addHandler(StatusHandler())
+    _set_special_levels()
+
+
+def _create_default_handler(config):
     handler = logging.StreamHandler(sys.stdout)
+    handler.addFilter(ExtraFilter())
     if _json_format(config):
         handler.setFormatter(FiaasFormatter())
     elif _plain_format(config):
         handler.setFormatter(logging.Formatter("[%(asctime)s|%(levelname)7s] %(message)s [%(name)s|%(threadName)s]"))
-    if config.debug:
-        root.setLevel(logging.DEBUG)
-    root.addHandler(handler)
-    _set_special_levels()
+    return handler
 
 
 def _set_special_levels():

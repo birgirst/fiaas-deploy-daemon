@@ -19,7 +19,7 @@ blocks:
           - echo $APP_ENV
           - python --version
           - echo "Build..."
-          - gradle build
+          - ./gradlew build
           - echo "done"
       - name: Docker build
         commands:
@@ -27,8 +27,8 @@ blocks:
           - ls -1
           - echo $APP_ENV
           - echo "Docker build..."
-          - gradle bakeImage
-          - gradle tagLatestImage
+          - ./gradlew bakeImage
+          - ./gradlew tagLatestImage
           - echo "done"
 
   - name: "Unit tests"

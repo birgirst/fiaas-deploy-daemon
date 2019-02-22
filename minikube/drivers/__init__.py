@@ -8,6 +8,7 @@ from .virtualbox import VBoxDriverLinux, VBoxDriverMac
 from .xhyve import XHyveDriver
 from .hyperkit import HyperKitDriver
 from .kvm import KVMDriver
+from .none import NoneDriver
 
 LOG = logging.getLogger(__name__)
 DRIVERS = [HyperKitDriver(), XHyveDriver(), KVMDriver(), VBoxDriverLinux(), VBoxDriverMac()]
@@ -36,7 +37,7 @@ def select_driver(minikube_version):
                     configured_driver_name, driver.name)
         return driver
     #  raise MinikubeDriverError("No supported drivers available")
-    return "none"
+    return NoneDriver()
 
 
 class MinikubeDriverError(Exception):

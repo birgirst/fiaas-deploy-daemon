@@ -8,6 +8,13 @@ agent:
 blocks:
   - name: "Build"
     task:
+      prologue:
+        commands:
+          - sudo apt --assume-yes install libvirt-clients libvirt-daemon-system qemu-kvm
+          - sudo usermod -a -G libvirt $(whoami)
+          - curl -LO https://storage.googleapis.com/minikube/releases/latest/docker-machine-driver-kvm2 && sudo install docker-machine-driver-kvm2 /usr/local/bin/
+          - curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64 && sudo install minikube-linux-amd64 /usr/local/bin/minikube
+          - minikube config set vm-driver kvm2
       env_vars:
         - name: APP_ENV
           value: prod
@@ -18,12 +25,6 @@ blocks:
           - ls -1
           - echo $APP_ENV
           - python --version
-          - sudo apt --assume-yes install libvirt-clients libvirt-daemon-system qemu-kvm
-          - sudo usermod -a -G libvirt $(whoami)
-          - curl -LO https://storage.googleapis.com/minikube/releases/latest/docker-machine-driver-kvm2 && sudo install docker-machine-driver-kvm2 /usr/local/bin/
-          - curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64 && sudo install minikube-linux-amd64 /usr/local/bin/minikube
-          - minikube config set vm-driver kvm2
-          - newgrp libvirt
           - minikube version
           - minikube start
           - echo "Build..."

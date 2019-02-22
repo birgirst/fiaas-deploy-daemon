@@ -1,0 +1,13 @@
+version: v1.0
+name: Promote stable
+Agent:
+  machine:
+    type: e1-standard-2
+    os_image: ubuntu1804
+blocks:
+  - name: Promote
+    task:
+      jobs:
+        - name: 'Everything'
+          commands:
+            - echo 'Promoting stable!'

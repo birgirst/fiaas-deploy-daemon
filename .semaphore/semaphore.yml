@@ -26,9 +26,9 @@ blocks:
           - echo $APP_ENV
           - python --version
           - minikube version
-          - minikube start
+          - bash -c 'minikube start'
           - echo "Build..."
-          - ./gradlew build
+          - bash -c './gradlew build'
           - echo "done"
       - name: Build2
         commands:

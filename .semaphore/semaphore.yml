@@ -21,6 +21,7 @@ blocks:
       jobs:
       - name: Build
         commands:
+          - su - $USER
           - groups
           - id
           - checkout

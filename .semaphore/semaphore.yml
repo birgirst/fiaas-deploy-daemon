@@ -10,11 +10,7 @@ blocks:
     task:
       prologue:
         commands:
-          - sudo apt --assume-yes install libvirt-clients libvirt-daemon-system qemu-kvm
-          - sudo usermod -a -G libvirt $(whoami)
-          - curl -LO https://storage.googleapis.com/minikube/releases/latest/docker-machine-driver-kvm2 && sudo install docker-machine-driver-kvm2 /usr/local/bin/
-          - curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64 && sudo install minikube-linux-amd64 /usr/local/bin/minikube
-          - minikube config set vm-driver none
+         - echo 'setup'
       env_vars:
         - name: APP_ENV
           value: prod
@@ -30,9 +26,7 @@ blocks:
           - minikube version
           - sudo minikube start
           - echo "Build..."
-          - ./gradlew tasks
-          - ./gradlew build
-          - ./gradlew integrationTest
+          - sudo ./gradlew build integrationTest
           - echo "done"
       - name: Docker build
         commands:

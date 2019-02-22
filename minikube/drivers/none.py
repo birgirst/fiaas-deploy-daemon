@@ -10,7 +10,7 @@ from .common import has_utility, LinuxDriver
 # and does weird things as root, so it doesn't look like it's ready yet.
 class NoneDriver(LinuxDriver):
     name = "none"
-    arguments = ("--vm-driver", "none", "--use-vendored-driver")
+    arguments = ("--vm-driver", "none")
 
     def supported(self, minikube_version):
         if minikube_version < StrictVersion("0.20"):

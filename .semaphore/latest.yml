@@ -11,4 +11,5 @@ blocks:
         - name: 'Everything'
           commands:
             - echo 'Promoting latest!'
+            - pwd
             - ./bin/push_release.sh

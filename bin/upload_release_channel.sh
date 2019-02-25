@@ -16,7 +16,6 @@ cat release_channel.json
 }
 
 echo "publishing release channel metadata"
-echo $1
 
 if [ ! -f ./release_channel.json ]; then
     create_metadata()

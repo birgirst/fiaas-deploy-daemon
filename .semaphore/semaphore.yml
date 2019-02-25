@@ -33,7 +33,7 @@ blocks:
           - ls -1
           - echo $APP_ENV
           - echo "Docker build..."
-          - ./gradlew bakeImage tagLatestImage -x codestyle -x test -x integrationTest
+          - ./gradlew bakeImage tagLatestImage -x codestyle -x test -x integrationTest --stacktrace
           - echo "done"
 
   - name: "Push Image"

@@ -34,8 +34,6 @@ blocks:
         commands:
           - checkout
           - echo "Docker build..."
-          - git config --global user.email "fiaas@googlegroups.com"
-          - git config --global user.name "Captain fiaas"
           - output=$(./gradlew tagLatestImage)
           - version=$((grep "Successfully tagged fiaas/fiaas-deploy-daemon" <<< $output) | sed -e 's/Successfully tagged fiaas\/fiaas-deploy-daemon://g')
           - echo $version

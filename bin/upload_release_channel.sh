@@ -21,6 +21,8 @@ if [ ! -f ./release_channel.json ]; then
     create_metadata
 fi
 
+git config --global user.email "fiaas@googlegroups.com"
+git config --global user.name "Captain fiaas"
 git clone https://github.com/fiaas/releases releases-repo
 cd ./releases-repo
 if [ -n "${1:-}" ]; then

@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 
-set -x
+set -evuo pipefail
 
-echo "publishing release channel metadata"
-echo $1
-
+create_metadata () {
 cat <<EOF > release_channel.json
 {
     "image": "fiaas/fiaas-deploy-daemon:$version",
@@ -14,5 +12,28 @@ cat <<EOF > release_channel.json
     "updated": "$(date)"
 }
 EOF
-
 cat release_channel.json
+}
+
+echo "publishing release channel metadata"
+echo $1
+
+if [ ! -f ./release_channel.json ]; then
+    create_metadata()
+    cache store $SEMAPHORE_PROJECT_NAME-metadata ./release_channel.json
+fi
+
+git clone https://github.com/fiaas/releases releases-repo
+cd ./releases-repo
+if [ -z ${1+x} ]; then
+    mv ../release_channel.json ./fiaas-deploy-daemon/$1.json
+else
+    mkdir -p ./artifacts/${version}/
+    cp ../fiaas.yml ./artifacts/${version}/
+    git add ./artifacts/${version}
+fi
+git add .
+git commit -a -m "Release fiaas-deploy-daemon $version"
+git push https://${GITHUBKEY}@github.com/fiaas/releases
+
+echo "Successfully published release channel metadata"

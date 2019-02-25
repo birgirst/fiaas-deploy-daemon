@@ -44,7 +44,6 @@ blocks:
           - echo $version
           - export version
           - ./bin/upload_release_channel.sh
-          - ./bin/upload_release_channel.sh latest
           - echo "done"
 
 promotions:

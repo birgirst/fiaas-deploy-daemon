@@ -5,9 +5,12 @@ agent:
     type: e1-standard-2
     os_image: ubuntu1804
 blocks:
-  - name: Promote
+  - name: Stable
     task:
       jobs:
-        - name: 'Everything'
+        - name: 'Upload'
           commands:
             - echo 'Promoting stable!'
+            - checkout
+            - cache restore $SEMAPHORE_PROJECT_NAME-metadata
+            - ./bin/upload_release_channel.sh stable

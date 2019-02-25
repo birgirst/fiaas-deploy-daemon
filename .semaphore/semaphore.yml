@@ -29,6 +29,8 @@ blocks:
           - echo "done"
   - name: "Docker Build"
     task:
+      secrets:
+      - name: fdd-github
       jobs:
       - name: Docker build
         commands:

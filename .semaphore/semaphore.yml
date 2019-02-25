@@ -42,6 +42,7 @@ blocks:
           - output=$(./gradlew tagLatestImage)
           - version=$((grep "Successfully tagged fiaas/fiaas-deploy-daemon" <<< $output) | sed -e 's/Successfully tagged fiaas\/fiaas-deploy-daemon://g')
           - echo $version
+          - export version
           - ./bin/upload_release_channel.sh
           - ./bin/upload_release_channel.sh latest
           - echo "done"

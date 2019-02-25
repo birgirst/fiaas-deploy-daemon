@@ -18,8 +18,6 @@ blocks:
       jobs:
       - name: Build
         commands:
-          - groups
-          - id
           - checkout
           - ls -1
           - echo $APP_ENV
@@ -35,8 +33,7 @@ blocks:
           - ls -1
           - echo $APP_ENV
           - echo "Docker build..."
-          - ./gradlew bakeImage
-          - ./gradlew tagLatestImage
+          - ./gradlew bakeImage tageLatestImage -x codestyle -x test -x integrationTest
           - echo "done"
 
   - name: "Push Image"

@@ -18,7 +18,7 @@ cat release_channel.json
 echo "publishing release channel metadata"
 
 if [ ! -f ./release_channel.json ]; then
-    create_metadata()
+    create_metadata
 fi
 
 git clone https://github.com/fiaas/releases releases-repo

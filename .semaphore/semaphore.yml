@@ -33,7 +33,7 @@ blocks:
           - ls -1
           - echo $APP_ENV
           - echo "Docker build..."
-          - ./gradlew tagLatestImage -x test
+          - ./gradlew tagLatestImage
           - echo "done"
 
 promotions:

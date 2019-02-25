@@ -30,7 +30,13 @@ blocks:
       - name: Docker build
         commands:
           - checkout
+          - env
           - ls -1
+          - echo $APP_ENV
+          - echo $SEMAPHORE_JOB_ID
+          - echo $SEMAPHORE_PROJECT_NAME
+          - echo $SEMAPHORE_PROJECT_ID
+          - echo $SEMAPHORE_JOB_NAME
           - echo $APP_ENV
           - echo "Docker build..."
           - output=$(./gradlew tagLatestImage)

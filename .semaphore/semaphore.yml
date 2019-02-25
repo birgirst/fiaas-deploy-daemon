@@ -33,16 +33,8 @@ blocks:
           - ls -1
           - echo $APP_ENV
           - echo "Docker build..."
-          - ./gradlew tagLatestImage
+          - ./gradlew tagLatestImage -x test
           - echo "done"
-
-  - name: "Push Image"
-    task:
-      jobs:
-      - name: Push
-        commands:
-          - checkout
-          - echo "make docker.push"
 
 promotions:
   - name: Promote latest

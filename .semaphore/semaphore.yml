@@ -44,6 +44,7 @@ blocks:
           - echo $version
           - export version
           - ./bin/upload_release_channel.sh
+          - cache store $SEMAPHORE_PROJECT_NAME-metadata ./release_channel.json
           - echo "done"
 
 promotions:

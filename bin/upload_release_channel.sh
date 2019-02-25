@@ -19,7 +19,6 @@ echo "publishing release channel metadata"
 
 if [ ! -f ./release_channel.json ]; then
     create_metadata()
-    cache store $SEMAPHORE_PROJECT_NAME-metadata ./release_channel.json
 fi
 
 git clone https://github.com/fiaas/releases releases-repo

@@ -23,8 +23,8 @@ fi
 
 git clone https://github.com/fiaas/releases releases-repo
 cd ./releases-repo
-if [ -z ${1+x} ]; then
-    mv ../release_channel.json ./fiaas-deploy-daemon/$1.json
+if [ -n "${1:-}" ]; then
+    \cp ../release_channel.json ./fiaas-deploy-daemon/$1.json
 else
     mkdir -p ./artifacts/${version}/
     cp ../fiaas.yml ./artifacts/${version}/

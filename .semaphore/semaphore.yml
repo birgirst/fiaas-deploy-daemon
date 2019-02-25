@@ -38,10 +38,11 @@ blocks:
           - echo "Docker build..."
           - output=$(./gradlew tagLatestImage)
           - version=$((grep "Successfully tagged fiaas/fiaas-deploy-daemon" <<< $output) | sed -e 's/Successfully tagged fiaas\/fiaas-deploy-daemon://g')
-          - echo $version
+          - echo $version > version
           - export version
           - ./bin/upload_release_channel.sh
           - cache store $SEMAPHORE_PROJECT_NAME-metadata ./release_channel.json
+          - cache store $SEMAPHORE_PROJECT_NAME-version version
           - echo "done"
 
 promotions:
